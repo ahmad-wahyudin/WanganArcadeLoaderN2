@@ -38,6 +38,7 @@ pub struct Config {
 	height: u32,
 
 	debug_menu: bool,
+	force_self_merge: bool,
 
 	file_redirect: Option<Vec<FileRedirect>>,
 }
@@ -58,6 +59,7 @@ const fn default_config() -> Config {
 		width: 640,
 		height: 480,
 		debug_menu: false,
+		force_self_merge: false,
 		file_redirect: None,
 	}
 }
@@ -372,6 +374,22 @@ unsafe extern "C" fn get_address(clnet: *mut *mut c_int) -> c_int {
 	}
 }
 
+type FnIsConnect = unsafe extern "C" fn(*const u8, i32) -> i32;
+type FnGetPcbId = unsafe extern "C" fn(*const u8) -> i32;
+
+static mut ORIGINAL_IS_CONNECT: Option<FnIsConnect> = None;
+static mut GET_PCB_ID: Option<FnGetPcbId> = None;
+
+unsafe extern "C" fn patched_is_connect(this: *const u8, pcb_id: i32) -> i32 {
+    if CONFIG.force_self_merge {
+        let my_id = GET_PCB_ID.unwrap()(this);
+        if pcb_id == my_id {
+            return 1; // force self merge to always return true
+        }
+    }
+    ORIGINAL_IS_CONNECT.unwrap()(this, pcb_id)
+}
+
 #[repr(C)]
 pub struct RomInfo {
 	name: [u8; 32],
@@ -517,6 +535,12 @@ unsafe fn init() {
 			CONFIG = toml;
 		}
 	}
+
+	GET_PCB_ID = Some(transmute(hook::get_symbol("_ZNK5clNet8getPcbIdEv")));
+	ORIGINAL_IS_CONNECT = Some(transmute(hook::hook_symbol(
+    	"_ZNK5clNet9isConnectEi",
+    	patched_is_connect as *const (),
+	)));
 
 	// Really what I should do is implement a custom serde::Deserialize for KeyBindings
 	// but serdes documentation is really confusing when it comes to this
