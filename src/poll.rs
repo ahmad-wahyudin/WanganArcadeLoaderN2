@@ -327,7 +327,12 @@ impl PollState {
 					self.button_state.retain(|b| b != &button);
 				}
 				Event::ControllerAxisMotion { axis, value, .. } => {
-					let value = value as f32 / i16::MAX as f32;
+					let mut value = value as f32 / i16::MAX as f32;
+					// Apply steering inversion cleanly to raw X-axis motion
+					let invert_steering = unsafe { crate::CONFIG.invert_steering };
+					if invert_steering && (axis == controller::Axis::LeftX || axis == controller::Axis::RightX) {
+						value = -value;
+					}
 					use Axis::*;
 					let (axis_positive, axis_negative) = match axis {
 						controller::Axis::LeftX => (LeftStickRight, LeftStickLeft),
@@ -392,8 +397,23 @@ impl PollState {
 	}
 
 	fn axis_is_down(&self, axis: &Axis) -> f32 {
-		*self.axis_state.get(axis).unwrap_or(&0.0)
+		let raw_val = *self.axis_state.get(axis).unwrap_or(&0.0);
+		
+		let (invert_g, invert_b) = unsafe {
+			(crate::CONFIG.invert_gas, crate::CONFIG.invert_brake)
+		};
+
+		match axis {
+			Axis::LeftTriggerDown => {
+				if invert_g { 1.0 - raw_val } else { raw_val }
+			}
+			Axis::RightTriggerDown => {
+				if invert_b { 1.0 - raw_val } else { raw_val }
+			}
+			_ => raw_val,
+		}
 	}
+
 	fn axis_is_up(&self, axis: &Axis) -> bool {
 		self.axis_is_down(axis) == 0.0
 	}

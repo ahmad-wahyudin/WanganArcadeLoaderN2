@@ -41,6 +41,9 @@ pub struct Config {
 	force_self_merge: bool,
 	keyboard_steering_sensitivity: f32,
 	keyboard_pedal_sensitivity: f32,
+	invert_steering: bool,
+	invert_gas: bool,
+	invert_brake: bool,
 
 	file_redirect: Option<Vec<FileRedirect>>,
 }
@@ -64,6 +67,9 @@ const fn default_config() -> Config {
 		force_self_merge: false,
 		keyboard_steering_sensitivity: 6.0,
 		keyboard_pedal_sensitivity: 2.0,
+		invert_steering: false,
+		invert_gas: false,
+		invert_brake: false,
 		file_redirect: None,
 	}
 }
