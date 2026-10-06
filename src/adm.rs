@@ -52,31 +52,44 @@ extern "C" fn adm_fb_config() -> *const u8 {
 unsafe extern "C" fn adm_window() -> *mut AdmWindow {
 	let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
 	glfw.window_hint(WindowHint::Resizable(false)); // Force floating on tiling window managers
+	
+	let mut target_pos = None;
 	let (mut window, events) = glfw.with_primary_monitor(|glfw, m| {
-		if CONFIG.fullscreen {
+		let (window_mode, width, height) = if CONFIG.fullscreen {
+			// Safely borrow the monitor without consuming/moving it
 			if let Some(monitor) = m {
+				target_pos = Some(monitor.get_pos());
 				if let Some(mode) = monitor.get_video_mode() {
-					return glfw
-						.create_window(
-							mode.width,
-							mode.height,
-							"WanganArcadeLoader",
-							WindowMode::FullScreen(monitor),
-						)
-						.unwrap();
+					glfw.window_hint(WindowHint::Decorated(false));
+					glfw.window_hint(WindowHint::Floating(true));
+					(WindowMode::Windowed, mode.width, mode.height)
+				} else {
+					(WindowMode::Windowed, CONFIG.width, CONFIG.height)
 				}
+			} else {
+				(WindowMode::Windowed, CONFIG.width, CONFIG.height)
 			}
-		}
-		glfw.window_hint(WindowHint::AutoIconify(false));
-		glfw.create_window(
-			CONFIG.width,
-			CONFIG.height,
-			"WanganArcadeLoader",
-			WindowMode::Windowed,
-		)
-		.unwrap()
-	});
+		} else {
+			(WindowMode::Windowed, CONFIG.width, CONFIG.height)
+		};
 
+		glfw.window_hint(WindowHint::AutoIconify(false));
+
+		let mut win = glfw.create_window(
+			width,
+			height,
+			"WanganArcadeLoader",
+			window_mode,
+		)
+		.unwrap();
+
+		if let Some((x, y)) = target_pos {
+			win.0.set_pos(x, y);
+		}
+
+		win
+	});
+	
 	WINDOW_HANDLE = Some(window.get_x11_window());
 
 	// Initialize SDL state safely on the main thread
@@ -88,7 +101,6 @@ unsafe extern "C" fn adm_window() -> *mut AdmWindow {
 
 	window.make_current();
 	window.set_resizable(true);
-	window.set_focus_polling(true);
 	glfw.set_swap_interval(SwapInterval::Sync(1));
 
 	opengl::load_gl_funcs(&glfw);
