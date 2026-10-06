@@ -13,6 +13,8 @@ force_self_merge = false
 
 # 1% deadzone
 deadzone = 0.01
+keyboard_steering_sensitivity = 6.0
+keyboard_pedal_sensitivity = 2.0
 
 width = 640
 height = 480

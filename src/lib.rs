@@ -39,6 +39,8 @@ pub struct Config {
 
 	debug_menu: bool,
 	force_self_merge: bool,
+	keyboard_steering_sensitivity: f32,
+	keyboard_pedal_sensitivity: f32,
 
 	file_redirect: Option<Vec<FileRedirect>>,
 }
@@ -60,6 +62,8 @@ const fn default_config() -> Config {
 		height: 480,
 		debug_menu: false,
 		force_self_merge: false,
+		keyboard_steering_sensitivity: 6.0,
+		keyboard_pedal_sensitivity: 2.0,
 		file_redirect: None,
 	}
 }

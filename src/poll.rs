@@ -39,6 +39,7 @@ pub struct PollState {
 	axis_state: BTreeMap<Axis, f32>,
 	last_axis_state: BTreeMap<Axis, f32>,
 	window_handle: *const libc::c_void,
+	keyboard_axis_values: BTreeMap<String, f32>,
 }
 
 #[derive(Clone)]
@@ -190,6 +191,7 @@ impl PollState {
 			axis_state: BTreeMap::new(),
 			last_axis_state: BTreeMap::new(),
 			window_handle: handle,
+			keyboard_axis_values: BTreeMap::new(),
 		})
 	}
 
@@ -274,6 +276,37 @@ impl PollState {
 		} else {
 			self.keyboard_state.clear();
 		}
+
+		// Smooth analog ramping for keyboard controls using separate sensitivities
+		let steering_sens = unsafe { crate::CONFIG.keyboard_steering_sensitivity };
+		let pedal_sens = unsafe { crate::CONFIG.keyboard_pedal_sensitivity };
+		let dt = 0.016;
+
+		let mut gas_pressed = false;
+		let mut brake_pressed = false;
+		let mut left_pressed = false;
+		let mut right_pressed = false;
+
+		if let Some(ref kc) = unsafe { crate::KEYCONFIG.as_ref() } {
+			gas_pressed = kc.gas.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if self.keycode_is_down(k)));
+			brake_pressed = kc.brake.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if self.keycode_is_down(k)));
+			left_pressed = kc.wheel_left.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if self.keycode_is_down(k)));
+			right_pressed = kc.wheel_right.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if self.keycode_is_down(k)));
+		}
+
+		let mut update_axis = |name: &str, is_pressed: bool, sensitivity: f32| {
+			let val = self.keyboard_axis_values.entry(name.to_string()).or_insert(0.0);
+			if is_pressed {
+				*val = (*val + sensitivity * dt).min(1.0);
+			} else {
+				*val = (*val - sensitivity * dt).max(0.0);
+			}
+		};
+
+		update_axis("gas", gas_pressed, pedal_sens);
+		update_axis("brake", brake_pressed, pedal_sens);
+		update_axis("wheel_left", left_pressed, steering_sens);
+		update_axis("wheel_right", right_pressed, steering_sens);
 
 		for event in self.events.poll_iter() {
 			match event {
@@ -379,7 +412,23 @@ impl PollState {
 
 	fn binding_is_down(&self, keybinding: &KeyBinding) -> f32 {
 		match keybinding {
-			KeyBinding::Keycode(keycode) => self.keycode_is_down(keycode) as i32 as f32,
+			KeyBinding::Keycode(keycode) => {
+				if let Some(ref kc) = unsafe { crate::KEYCONFIG.as_ref() } {
+					if kc.gas.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if k == keycode)) {
+						return *self.keyboard_axis_values.get("gas").unwrap_or(&0.0);
+					}
+					if kc.brake.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if k == keycode)) {
+						return *self.keyboard_axis_values.get("brake").unwrap_or(&0.0);
+					}
+					if kc.wheel_left.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if k == keycode)) {
+						return *self.keyboard_axis_values.get("wheel_left").unwrap_or(&0.0);
+					}
+					if kc.wheel_right.keys.iter().any(|b| matches!(b, KeyBinding::Keycode(k) if k == keycode)) {
+						return *self.keyboard_axis_values.get("wheel_right").unwrap_or(&0.0);
+					}
+				}
+				self.keycode_is_down(keycode) as i32 as f32
+			}
 			KeyBinding::Button(button) => self.button_is_down(button) as i32 as f32,
 			KeyBinding::Axis(axis) => self.axis_is_down(axis),
 		}
