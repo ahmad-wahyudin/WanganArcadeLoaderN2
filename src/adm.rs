@@ -67,6 +67,7 @@ unsafe extern "C" fn adm_window() -> *mut AdmWindow {
 				}
 			}
 		}
+		glfw.window_hint(WindowHint::AutoIconify(false));
 		glfw.create_window(
 			CONFIG.width,
 			CONFIG.height,
