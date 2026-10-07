@@ -22,9 +22,21 @@ pub struct FileRedirect {
 	flags: Option<u32>,
 }
 
+#[derive(Debug, serde::Deserialize, PartialEq, Copy, Clone)]
+pub enum FullscreenMode {
+	#[serde(rename = "exclusive")]
+	Exclusive,
+	#[serde(rename = "monitor-based")]
+	MonitorBased,
+	#[serde(rename = "borderless_windowed")]
+	BorderlessWindowed,
+}
+
 #[derive(serde::Deserialize)]
 pub struct Config {
 	fullscreen: bool,
+	fullscreen_mode: FullscreenMode,
+	preserve_aspect_ratio: bool,
 	input_emu: bool,
 	card_emu: bool,
 	redir_card: bool,
@@ -52,6 +64,8 @@ pub struct Config {
 const fn default_config() -> Config {
 	Config {
 		fullscreen: false,
+		fullscreen_mode: FullscreenMode::Exclusive,
+		preserve_aspect_ratio: false,
 		input_emu: true,
 		card_emu: true,
 		redir_card: false,

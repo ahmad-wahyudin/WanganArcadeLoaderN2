@@ -1,4 +1,8 @@
 fullscreen = false
+# Choose exactly one of the following fullscreen options:
+# "exclusive", "monitor-based", or "borderless_windowed"
+fullscreen_mode = "exclusive"
+preserve_aspect_ratio = false
 input_emu = true
 card_emu = true
 redir_card = false

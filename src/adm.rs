@@ -48,49 +48,79 @@ extern "C" fn adm_config() -> *const *const AdmChooseMode {
 extern "C" fn adm_fb_config() -> *const u8 {
 	Box::leak(Box::new(0))
 }
+/* 
+*/
 
 unsafe extern "C" fn adm_window() -> *mut AdmWindow {
 	let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
 	glfw.window_hint(WindowHint::Resizable(false)); // Force floating on tiling window managers
-	
-	let mut target_pos = None;
+
 	let (mut window, events) = glfw.with_primary_monitor(|glfw, m| {
-		let (window_mode, width, height) = if CONFIG.fullscreen {
-			// Safely borrow the monitor without consuming/moving it
+		if CONFIG.fullscreen {
 			if let Some(monitor) = m {
-				target_pos = Some(monitor.get_pos());
-				if let Some(mode) = monitor.get_video_mode() {
-					glfw.window_hint(WindowHint::Decorated(false));
-					glfw.window_hint(WindowHint::Floating(true));
-					(WindowMode::Windowed, mode.width, mode.height)
-				} else {
-					(WindowMode::Windowed, CONFIG.width, CONFIG.height)
+				match CONFIG.fullscreen_mode {
+					FullscreenMode::Exclusive => {
+						// Request a real video-mode switch to the game's own
+						// resolution. If the driver/monitor can't honor it,
+						// it falls back to the current desktop mode, same as
+						// MonitorBased — adm_swap_buffers's scaling handles
+						// that case either way.
+						glfw.window_hint(WindowHint::AutoIconify(false));
+						return glfw
+							.create_window(
+								CONFIG.width,
+								CONFIG.height,
+								"WanganArcadeLoader",
+								WindowMode::FullScreen(monitor),
+							)
+							.unwrap();
+					}
+					FullscreenMode::MonitorBased => {
+						if let Some(mode) = monitor.get_video_mode() {
+							glfw.window_hint(WindowHint::AutoIconify(false));
+							return glfw
+								.create_window(
+									mode.width,
+									mode.height,
+									"WanganArcadeLoader",
+									WindowMode::FullScreen(monitor),
+								)
+								.unwrap();
+						}
+					}
+					FullscreenMode::BorderlessWindowed => {
+						if let Some(mode) = monitor.get_video_mode() {
+							let pos = monitor.get_pos();
+							glfw.window_hint(WindowHint::Decorated(false));
+							glfw.window_hint(WindowHint::Floating(true));
+							glfw.window_hint(WindowHint::AutoIconify(false));
+							let (mut win, win_events) = glfw
+								.create_window(
+									mode.width,
+									mode.height,
+									"WanganArcadeLoader",
+									WindowMode::Windowed,
+								)
+								.unwrap();
+							win.set_pos(pos.0, pos.1);
+							return (win, win_events);
+						}
+					}
 				}
-			} else {
-				(WindowMode::Windowed, CONFIG.width, CONFIG.height)
 			}
-		} else {
-			(WindowMode::Windowed, CONFIG.width, CONFIG.height)
-		};
-
-		glfw.window_hint(WindowHint::AutoIconify(false));
-
-		let mut win = glfw.create_window(
-			width,
-			height,
-			"WanganArcadeLoader",
-			window_mode,
-		)
-		.unwrap();
-
-		if let Some((x, y)) = target_pos {
-			win.0.set_pos(x, y);
 		}
-
-		win
+		glfw.window_hint(WindowHint::AutoIconify(false));
+		glfw.create_window(
+			CONFIG.width,
+			CONFIG.height,
+			"WanganArcadeLoader",
+			WindowMode::Windowed,
+		)
+		.unwrap()
 	});
-	
+
 	WINDOW_HANDLE = Some(window.get_x11_window());
+//	bypass_compositor(window.get_x11_window());
 
 	// Initialize SDL state safely on the main thread
 	if CONFIG.input_emu {
@@ -100,7 +130,9 @@ unsafe extern "C" fn adm_window() -> *mut AdmWindow {
 	}
 
 	window.make_current();
+
 	window.set_resizable(true);
+	window.set_focus_polling(true);
 	glfw.set_swap_interval(SwapInterval::Sync(1));
 
 	opengl::load_gl_funcs(&glfw);
@@ -182,17 +214,25 @@ unsafe extern "C" fn adm_swap_buffers(window_ptr: *mut AdmWindow) -> c_int {
 
 	if should_blit {
 		let (window_width, window_height) = window.window.get_size();
-		let window_ar = window_width as f32 / window_height as f32;
-		let ar = CONFIG.width as f32 / CONFIG.height as f32;
 
-		let (viewport_width, viewport_height, viewport_x, viewport_y) = if window_ar > ar {
-			let viewport_width: i32 = ((window_height as f32) * ar) as i32;
-			let viewport_x = ((window_width - viewport_width) as f32 / 2.0) as i32;
-			(viewport_width, window_height, viewport_x, 0)
+		let (viewport_width, viewport_height, viewport_x, viewport_y) = if CONFIG
+			.preserve_aspect_ratio
+		{
+			let window_ar = window_width as f32 / window_height as f32;
+			let ar = CONFIG.width as f32 / CONFIG.height as f32;
+
+			if window_ar > ar {
+				let viewport_width: i32 = ((window_height as f32) * ar) as i32;
+				let viewport_x = ((window_width - viewport_width) as f32 / 2.0) as i32;
+				(viewport_width, window_height, viewport_x, 0)
+			} else {
+				let viewport_height = ((window_width as f32) / ar) as i32;
+				let viewport_y = ((window_height - viewport_height) as f32 / 2.0) as i32;
+				(window_width, viewport_height, 0, viewport_y)
+			}
 		} else {
-			let viewport_height = ((window_width as f32) / ar) as i32;
-			let viewport_y = ((window_height - viewport_height) as f32 / 2.0) as i32;
-			(window_width, viewport_height, 0, viewport_y)
+			// Stretch to fill the entire window, ignoring aspect ratio.
+			(window_width, window_height, 0, 0)
 		};
 
 		gl::BindFramebuffer(gl::READ_FRAMEBUFFER, 0);
