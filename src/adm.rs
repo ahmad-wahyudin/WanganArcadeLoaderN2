@@ -1,6 +1,7 @@
 use crate::*;
 use glfw::*;
 use std::mem::forget;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 extern "C" fn adm_version() -> *const c_char {
 	let cstr = CString::new("WanganArcadeLoader 0.1").unwrap();
@@ -10,7 +11,7 @@ extern "C" fn adm_version() -> *const c_char {
 }
 
 pub static mut WINDOW_HANDLE: Option<*mut c_void> = None;
-pub static mut WINDOW_FOCUSED: bool = true;
+pub static WINDOW_FOCUSED: AtomicBool = AtomicBool::new(true);
 
 #[allow(non_snake_case)]
 #[repr(C)]
@@ -184,7 +185,7 @@ unsafe extern "C" fn adm_swap_buffers(window_ptr: *mut AdmWindow) -> c_int {
 
 	for (_, event) in glfw::flush_messages(&window.events) {
 		if let WindowEvent::Focus(focused) = event {
-			WINDOW_FOCUSED = focused;
+			WINDOW_FOCUSED.store(focused, Ordering::Relaxed);
 		}
 	}
 

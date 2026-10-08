@@ -204,7 +204,7 @@ impl PollState {
 		self.last_axis_state.extend(&self.axis_state);
 
 		// Only poll keyboard if the game window is currently in focus
-		if unsafe { crate::adm::WINDOW_FOCUSED } {
+		if crate::adm::WINDOW_FOCUSED.load(std::sync::atomic::Ordering::Relaxed) {
 			let device_keys = device_query::DeviceState::new().get_keys();
 			self.keyboard_state.clear();
 			for k in device_keys {
