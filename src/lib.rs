@@ -361,41 +361,129 @@ unsafe extern "C" fn cl_main(log: *mut *mut ()) {
 	log.write(hook::get_symbol("_ZSt4cout"));
 }
 
-unsafe extern "C" fn get_address(clnet: *mut *mut c_int) -> c_int {
-	if let Some(local_ip) = &CONFIG.local_ip {
-		let local_ip = std::net::Ipv4Addr::from_str(local_ip).unwrap();
-		let ip = i32::from_be_bytes(local_ip.octets());
-		let local_subnet = std::net::Ipv4Addr::from_str("255.255.255.0").unwrap();
-		let subnetmask = i32::from_be_bytes(local_subnet.octets());
-		let net = clnet.byte_offset(0x24).read();
-		let net = if net.is_null() {
-			clnet.byte_offset(0x1C).read()
-		} else {
-			net
-		};
-		net.byte_offset(0x04).write(ip);
-		net.byte_offset(0x08).write(subnetmask);
-		ip
-	} else {
-		let local_ip = local_ip_address::local_ip().unwrap();
-		let local_ip = match local_ip {
-			std::net::IpAddr::V4(addr) => addr,
-			_ => unreachable!(),
-		};
-		let local_subnet = std::net::Ipv4Addr::from_str("255.255.255.0").unwrap();
-		let subnetmask = i32::from_be_bytes(local_subnet.octets());
-		let ip = i32::from_be_bytes(local_ip.octets());
-		let net = clnet.byte_offset(0x24).read();
-		let net = if net.is_null() {
-			clnet.byte_offset(0x1C).read()
-		} else {
-			net
-		};
-		net.byte_offset(0x04).write(ip);
-		net.byte_offset(0x04).write(ip);
-		net.byte_offset(0x08).write(subnetmask);
-		ip
+fn netmask_for(ip: std::net::Ipv4Addr) -> std::net::Ipv4Addr {
+	let fallback = std::net::Ipv4Addr::new(255, 255, 255, 0);
+	unsafe {
+		let mut ifap: *mut ifaddrs = std::ptr::null_mut();
+		if getifaddrs(&mut ifap) != 0 {
+			return fallback;
+		}
+
+		let mut result = fallback;
+		let mut cur = ifap;
+		while !cur.is_null() {
+			let a = &*cur;
+			if !a.ifa_addr.is_null()
+				&& !a.ifa_netmask.is_null()
+				&& (*a.ifa_addr).sa_family as c_int == AF_INET
+			{
+				let addr = &*(a.ifa_addr as *const sockaddr_in);
+				if addr.sin_addr.s_addr.to_ne_bytes() == ip.octets() {
+					let mask = &*(a.ifa_netmask as *const sockaddr_in);
+					result = std::net::Ipv4Addr::from(mask.sin_addr.s_addr.to_ne_bytes());
+					break;
+				}
+			}
+			cur = a.ifa_next;
+		}
+		freeifaddrs(ifap);
+		result
 	}
+}
+
+unsafe extern "C" fn get_address(clnet: *mut *mut c_int) -> c_int {
+	let local_ip: std::net::Ipv4Addr = match &CONFIG.local_ip {
+		Some(s) => match std::net::Ipv4Addr::from_str(s) {
+			Ok(ip) => ip,
+			Err(_) => {
+				eprintln!("Invalid local_ip in config.toml: {s}");
+				std::net::Ipv4Addr::new(127, 0, 0, 1)
+			}
+		},
+		None => match local_ip_address::local_ip() {
+			Ok(std::net::IpAddr::V4(addr)) => addr,
+			_ => {
+				eprintln!("Could not determine a local IPv4 address");
+				std::net::Ipv4Addr::new(127, 0, 0, 1)
+			}
+		},
+	};
+
+	let local_mask = netmask_for(local_ip);
+
+	let ip = i32::from_be_bytes(local_ip.octets());
+	let subnetmask = i32::from_be_bytes(local_mask.octets());
+
+	let net = clnet.byte_offset(0x24).read();
+	let net = if net.is_null() {
+		clnet.byte_offset(0x1C).read()
+	} else {
+		net
+	};
+	net.byte_offset(0x04).write(ip);
+	net.byte_offset(0x08).write(subnetmask);
+	ip
+}
+
+fn forced_iface() -> Option<[u8; 4]> {
+	let s = unsafe { CONFIG.local_ip.as_ref()? };
+	Some(std::net::Ipv4Addr::from_str(s).ok()?.octets())
+}
+
+unsafe fn real_fn(name: &str) -> *mut c_void {
+	let name = CString::new(name).unwrap();
+	dlsym(RTLD_NEXT, name.as_ptr())
+}
+
+#[no_mangle]
+unsafe extern "C" fn setsockopt(
+	fd: c_int,
+	level: c_int,
+	name: c_int,
+	val: *const c_void,
+	len: socklen_t,
+) -> c_int {
+	let real: extern "C" fn(c_int, c_int, c_int, *const c_void, socklen_t) -> c_int =
+		transmute(real_fn("setsockopt"));
+
+	if level == IPPROTO_IP && !val.is_null() {
+		if let Some(addr) = forced_iface() {
+			if name == IP_MULTICAST_IF && (len == 4 || len >= 12) {
+				let mut buf = std::slice::from_raw_parts(val as *const u8, len as usize).to_vec();
+				if len == 4 {
+					buf.copy_from_slice(&addr);
+				} else {
+					buf[4..8].copy_from_slice(&addr);
+					buf[8..12].copy_from_slice(&0i32.to_ne_bytes());
+				}
+				return real(fd, level, name, buf.as_ptr() as *const c_void, len);
+			}
+			if (name == IP_ADD_MEMBERSHIP || name == IP_DROP_MEMBERSHIP) && len >= 8 {
+				let mut buf = std::slice::from_raw_parts(val as *const u8, len as usize).to_vec();
+				buf[4..8].copy_from_slice(&addr); // imr_interface / imr_address
+				if len >= 12 {
+					buf[8..12].copy_from_slice(&0i32.to_ne_bytes());
+				}
+				return real(fd, level, name, buf.as_ptr() as *const c_void, len);
+			}
+		}
+	}
+	real(fd, level, name, val, len)
+}
+
+#[no_mangle]
+unsafe extern "C" fn socket(domain: c_int, ty: c_int, proto: c_int) -> c_int {
+	let real: extern "C" fn(c_int, c_int, c_int) -> c_int = transmute(real_fn("socket"));
+	let fd = real(domain, ty, proto);
+
+	if fd >= 0 && domain == AF_INET && (ty & 0xF) == SOCK_DGRAM {
+		if let Some(addr) = forced_iface() {
+			let real_set: extern "C" fn(c_int, c_int, c_int, *const c_void, socklen_t) -> c_int =
+				transmute(real_fn("setsockopt"));
+			real_set(fd, IPPROTO_IP, IP_MULTICAST_IF, addr.as_ptr() as *const c_void, 4);
+		}
+	}
+	fd
 }
 
 type FnIsConnect = unsafe extern "C" fn(*const u8, i32) -> i32;
@@ -408,7 +496,7 @@ unsafe extern "C" fn patched_is_connect(this: *const u8, pcb_id: i32) -> i32 {
     if CONFIG.force_self_merge {
         let my_id = GET_PCB_ID.unwrap()(this);
         if pcb_id == my_id {
-            return 1; // force self merge to always return true
+            return 1;
         }
     }
     ORIGINAL_IS_CONNECT.unwrap()(this, pcb_id)
