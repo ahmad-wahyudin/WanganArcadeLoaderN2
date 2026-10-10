@@ -5,6 +5,7 @@ use std::ffi::{CStr, CString};
 use std::mem::transmute;
 use std::str::FromStr;
 
+
 pub mod adm;
 pub mod al;
 pub mod card;
@@ -486,20 +487,116 @@ unsafe extern "C" fn socket(domain: c_int, ty: c_int, proto: c_int) -> c_int {
 	fd
 }
 
+// force_slef_merge code 
 type FnIsConnect = unsafe extern "C" fn(*const u8, i32) -> i32;
 type FnGetPcbId = unsafe extern "C" fn(*const u8) -> i32;
+type FnUpdateClient = unsafe extern "C" fn(*mut u8);
 
 static mut ORIGINAL_IS_CONNECT: Option<FnIsConnect> = None;
 static mut GET_PCB_ID: Option<FnGetPcbId> = None;
+static mut ORIGINAL_UPDATE_CLIENT: Option<FnUpdateClient> = None;
+
+// (mask offset, count offset) inside the pimpl at clNet+0x24.
+// Only known for W3P (DX+). Other versions return None.
+unsafe fn net_offsets() -> Option<(usize, usize)> {
+    match GAME_VERSION.major {
+        GameMajor::W3P => Some((0x14a4, 0x14a0)),
+        _ => None,
+	}
+    
+}
 
 unsafe extern "C" fn patched_is_connect(this: *const u8, pcb_id: i32) -> i32 {
-    if CONFIG.force_self_merge {
+    // WM3/W3X: old behaviour. W3P: only after the link check has finished.
+    if CONFIG.force_self_merge
+        && (net_offsets().is_none() || LINK_CHECK_DONE.load(Ordering::Relaxed))
+    {
         let my_id = GET_PCB_ID.unwrap()(this);
         if pcb_id == my_id {
             return 1;
         }
     }
     ORIGINAL_IS_CONNECT.unwrap()(this, pcb_id)
+}
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static FORCE_ACTIVE: AtomicBool = AtomicBool::new(false);
+static LINK_CHECK_DONE: AtomicBool = AtomicBool::new(false);
+
+type FnFinishLinkCheck = unsafe extern "C" fn(*mut u8);
+static mut ORIGINAL_FINISH_LINK_CHECK: Option<FnFinishLinkCheck> = None;
+
+unsafe fn own_slot_and_pimpl(this: *mut u8) -> Option<(*mut u8, i32)> {
+    let pimpl = *(this.add(0x24) as *const *mut u8);
+    if pimpl.is_null() {
+        return None;
+    }
+    let own = GET_PCB_ID.unwrap()(this as *const u8);
+    if !(0..4).contains(&own) {
+        return None;
+    }
+    Some((pimpl, own))
+}
+
+unsafe fn set_own_mask_bit(this: *mut u8) {
+    let Some((mask_off, count_off)) = net_offsets() else { return };
+    let Some((pimpl, own)) = own_slot_and_pimpl(this) else { return };
+    let mask = pimpl.add(mask_off) as *mut u32;
+    let bit = 1u32 << own;
+    if *mask & bit == 0 {
+        *mask |= bit;
+        let count = pimpl.add(count_off) as *mut i32;
+        *count = (*count + 1).min(4);
+    }
+}
+
+// W3P: only force the own bit while finishLinkCheck is running
+unsafe extern "C" fn patched_update_client(this: *mut u8) {
+    ORIGINAL_UPDATE_CLIENT.unwrap()(this);
+    if CONFIG.force_self_merge && FORCE_ACTIVE.load(Ordering::Relaxed) {
+        set_own_mask_bit(this);
+    }
+}
+
+unsafe extern "C" fn patched_finish_link_check(this: *mut u8) {
+    let active = CONFIG.force_self_merge && net_offsets().is_some();
+    if active {
+        FORCE_ACTIVE.store(true, Ordering::Relaxed);
+        set_own_mask_bit(this);
+    }
+    ORIGINAL_FINISH_LINK_CHECK.unwrap()(this);
+	LINK_CHECK_DONE.store(true, Ordering::Relaxed);
+    FORCE_ACTIVE.store(false, Ordering::Relaxed);
+    if active {
+        // keep our own slot allowed so updateClient reconnects it for real
+        if let Some((pimpl, own)) = own_slot_and_pimpl(this) {
+            *pimpl.add(0x3c) |= 1u8 << own;
+        }
+    }
+}
+// end self_merge_code
+
+static mut ORIGINAL_SET_JOIN_STATE: Option<unsafe extern "C" fn(*mut u8, i32)> = None;
+static mut ORIGINAL_SET_JOIN_STATE_SYNC: Option<unsafe extern "C" fn(*mut u8, i32)> = None;
+
+unsafe fn mirror_own_state(this: *mut u8, field_off: usize, state: i32) {
+    if !CONFIG.force_self_merge || net_offsets().is_none() {
+        return;
+    }
+    let Some((pimpl, own)) = own_slot_and_pimpl(this) else { return };
+    let entry = pimpl.add(field_off + own as usize * 0x30) as *mut u16;
+    entry.write_unaligned(state as u16);
+}
+
+unsafe extern "C" fn patched_set_join_state(this: *mut u8, state: i32) {
+    ORIGINAL_SET_JOIN_STATE.unwrap()(this, state);
+    mirror_own_state(this, 0x1602, state);
+}
+
+unsafe extern "C" fn patched_set_join_state_sync(this: *mut u8, state: i32) {
+    ORIGINAL_SET_JOIN_STATE_SYNC.unwrap()(this, state);
+    mirror_own_state(this, 0x1604, state);
 }
 
 #[repr(C)]
@@ -653,6 +750,32 @@ unsafe fn init() {
     	"_ZNK5clNet9isConnectEi",
     	patched_is_connect as *const (),
 	)));
+	
+	//new code
+	let tramp = hook::hook_symbol(
+    	"_ZN5clNet12updateClientEv",
+    	patched_update_client as *const (),
+	);
+	if tramp.is_null() {
+    	eprintln!("force_self_merge: failed to hook clNet::updateClient");
+	} else {
+    	ORIGINAL_UPDATE_CLIENT = Some(transmute(tramp));
+	}
+	//end new code
+	let t = hook::hook_symbol(
+		"_ZN5clNet15finishLinkCheckEv",
+		patched_finish_link_check as *const (),
+	);
+	if t.is_null() {
+		eprintln!("force_self_merge: failed to hook clNet::finishLinkCheck");
+	} else {
+		ORIGINAL_FINISH_LINK_CHECK = Some(transmute(t));
+	}
+
+	let t = hook::hook_symbol("_ZN5clNet12setJoinStateEi", patched_set_join_state as *const ());
+	if !t.is_null() { ORIGINAL_SET_JOIN_STATE = Some(transmute(t)); }
+	let t = hook::hook_symbol("_ZN5clNet16setJoinStateSyncEi", patched_set_join_state_sync as *const ());
+	if !t.is_null() { ORIGINAL_SET_JOIN_STATE_SYNC = Some(transmute(t)); }
 
 	// Really what I should do is implement a custom serde::Deserialize for KeyBindings
 	// but serdes documentation is really confusing when it comes to this
