@@ -12,9 +12,6 @@ ignore_custom_ioctls = true
 dongle = "285013501138"
 debug_menu = false
 
-# for wmmt3dx+ use true
-force_self_merge = false
-
 # 1% deadzone
 deadzone = 0.01
 keyboard_steering_sensitivity = 6.0

@@ -50,7 +50,6 @@ pub struct Config {
 	height: u32,
 
 	debug_menu: bool,
-	force_self_merge: bool,
 	keyboard_steering_sensitivity: f32,
 	keyboard_pedal_sensitivity: f32,
 	invert_steering: bool,
@@ -77,7 +76,6 @@ const fn default_config() -> Config {
 		width: 640,
 		height: 480,
 		debug_menu: false,
-		force_self_merge: false,
 		keyboard_steering_sensitivity: 6.0,
 		keyboard_pedal_sensitivity: 2.0,
 		invert_steering: false,
@@ -485,12 +483,10 @@ unsafe extern "C" fn socket(domain: c_int, ty: c_int, proto: c_int) -> c_int {
 	fd
 }
 
-// force_self_merge
-type FnIsConnect = unsafe extern "C" fn(*const u8, i32) -> i32;
+// force_self_merge (DX+ / W3P only)
 type FnGetPcbId = unsafe extern "C" fn(*const u8) -> i32;
 type FnSetJoinState = unsafe extern "C" fn(*mut u8, i32);
 
-static mut ORIGINAL_IS_CONNECT: Option<FnIsConnect> = None;
 static mut GET_PCB_ID: Option<FnGetPcbId> = None;
 static mut ORIGINAL_SET_JOIN_STATE: Option<FnSetJoinState> = None;
 static mut ORIGINAL_SET_JOIN_STATE_SYNC: Option<FnSetJoinState> = None;
@@ -500,26 +496,13 @@ const W3P_JOIN_STATE: usize = 0x1602; // u16 per PCB
 const W3P_JOIN_STATE_SYNC: usize = 0x1604; // u16 per PCB
 const W3P_PCB_STRIDE: usize = 0x30;
 
-unsafe fn is_dx_plus() -> bool {
-	GAME_VERSION.major == GameMajor::W3P
-}
-
-unsafe extern "C" fn patched_is_connect(this: *const u8, pcb_id: i32) -> i32 {
-	if CONFIG.force_self_merge && !is_dx_plus() && pcb_id == GET_PCB_ID.unwrap()(this) {
-		return 1;
-	}
-	ORIGINAL_IS_CONNECT.unwrap()(this, pcb_id)
-}
-
 unsafe fn mirror_own_state(this: *mut u8, field: usize, state: i32) {
-	if !CONFIG.force_self_merge || !is_dx_plus() {
-		return;
-	}
+	let Some(get_pcb_id) = GET_PCB_ID else { return };
 	let pimpl = *(this.add(0x24) as *const *mut u8);
 	if pimpl.is_null() {
 		return;
 	}
-	let own = GET_PCB_ID.unwrap()(this as *const u8);
+	let own = get_pcb_id(this as *const u8);
 	if !(0..4).contains(&own) {
 		return;
 	}
@@ -684,22 +667,6 @@ unsafe fn init() {
 		}
 	}
 
-	if CONFIG.force_self_merge {
-		GET_PCB_ID = Some(transmute(hook::get_symbol("_ZNK5clNet8getPcbIdEv")));
-		ORIGINAL_IS_CONNECT = Some(transmute(hook::hook_symbol(
-			"_ZNK5clNet9isConnectEi",
-			patched_is_connect as *const (),
-		)));
-		ORIGINAL_SET_JOIN_STATE = Some(transmute(hook::hook_symbol(
-			"_ZN5clNet12setJoinStateEi",
-			patched_set_join_state as *const (),
-		)));
-		ORIGINAL_SET_JOIN_STATE_SYNC = Some(transmute(hook::hook_symbol(
-			"_ZN5clNet16setJoinStateSyncEi",
-			patched_set_join_state_sync as *const (),
-		)));
-	}
-
 	// Really what I should do is implement a custom serde::Deserialize for KeyBindings
 	// but serdes documentation is really confusing when it comes to this
 	#[derive(serde::Deserialize)]
@@ -817,6 +784,20 @@ unsafe fn init() {
 	let rom_info = rom_info.as_ref().unwrap();
 	let version = rom_info.into();
 	GAME_VERSION = version;
+
+	// force_self_merge: DX+ (W3P) only
+	if GAME_VERSION.major == GameMajor::W3P {
+		GET_PCB_ID = Some(transmute(hook::get_symbol("_ZNK5clNet8getPcbIdEv")));
+		ORIGINAL_SET_JOIN_STATE = Some(transmute(hook::hook_symbol(
+			"_ZN5clNet12setJoinStateEi",
+			patched_set_join_state as *const (),
+		)));
+		ORIGINAL_SET_JOIN_STATE_SYNC = Some(transmute(hook::hook_symbol(
+			"_ZN5clNet16setJoinStateSyncEi",
+			patched_set_join_state_sync as *const (),
+		)));
+	}
+
 	for plugin in glob::glob("plugins/*.so").unwrap() {
 		let plugin_name = plugin.unwrap().to_string_lossy().to_string();
 		let plugin = CString::new(plugin_name.clone()).unwrap();
