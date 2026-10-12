@@ -1,11 +1,20 @@
-## Required Packages
-### Arch Linux
-```
-paru -Sy nvidia-cg-toolkit mangohud lib32-glibc lib32-gcc-libs lib32-libx11 lib32-libxcb lib32-libpulse lib32-alsa-lib lib32-libxau lib32-libxdmcp lib32-sndio lib32-libbsd lib32-libmd lib32-mangohud
-```
-### Debian/Ubuntu/Kali
-```
-sudo dpkg --add-architecture i386
-sudo apt update
-sudo apt install nvidia-cg-toolkit mangohud libc6:i386 libx11-dev:i386 libsndio-dev:i386 pulseaudio:i386
-```
+# WanganArcadeLoaderN2
+
+A Loader for running **Wangan Midnight Maximum Tune 3 / 3DX / 3DX+** in Linux PC.
+Cloned from [https://github.com/vixen256/WanganArcadeLoader0.5.git](https://github.com/vixen256/WanganArcadeLoader0.5.git)
+
+With some modifications according to my needs.
+
+---
+
+## Features
+1. Add coin input implementation
+2. Fix MERGE NOT FOUND on W3P or 3DX-Plus
+3. Have 3 Full-screen mode:"exclusive", "monitor-based", and "borderless_windowed"
+4. Add preserve aspect ratio option
+> (note: exclusive full-screen mode doesn't support this)
+5. Fix multicast using default OS route instead local_ip route
+6. Support keyboard input on Wayland Session
+7. Add option disable debug in test menu
+8. Add option keyboard steering and pedal sensitivity
+9. Support invert axis steering, gas pedal, and brake pedal.
