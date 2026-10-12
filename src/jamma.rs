@@ -161,11 +161,15 @@ unsafe fn handle_inputs_inner(data: *mut u32) {
 		.write(u32::from_le_bytes(brake.to_le_bytes()));
 }
 
-pub unsafe fn init() {
+pub unsafe fn hook_seq_main() {
 	ORIGINAL_SEQ_MAIN = Some(std::mem::transmute(hook::hook_symbol(
 		"_Z7seqMainb",
 		seq_main_hook as *const (),
 	)));
+}
+
+pub unsafe fn init() {
+	hook_seq_main();
 	// Pre-initialize SDL_STATE on the main thread if window handle is ready
 	if let Some(handle) = adm::WINDOW_HANDLE {
 		if SDL_STATE.is_none() {

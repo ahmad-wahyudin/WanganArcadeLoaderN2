@@ -762,6 +762,8 @@ unsafe fn init() {
 
 	if CONFIG.input_emu {
 		jamma::init();
+	}else {
+		jamma::hook_seq_main();
 	}
 	if CONFIG.card_emu {
 		card::init();
