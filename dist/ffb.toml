@@ -1,0 +1,44 @@
+# Force feedback settings for WanganArcadeLoader. Every key is optional.
+# Missing file = FFB off.
+
+enabled = false
+
+# "haptic": steering wheel, constant force + spring + damper + vibration (falls back to rumble if no wheel is found)
+# "rumble": gamepad, one rumble motor driven by the strongest of those forces
+mode = "rumble"
+
+# Case-insensitive substring of the SDL haptic device name. Empty = first device.
+# All detected devices are printed to the console at startup.
+device = ""
+
+# Percent. 100 = unchanged.
+gain = 100
+spring_gain = 100
+damper_gain = 100
+vibration_gain = 100
+
+# What the board's "power type" scale is treated as (percent).
+power_scale = 50
+
+# Apply force even when the game says 0.
+ignore_power_type = true
+
+# setReflect() takes -127..127 but a race only reaches ~35, so this value is
+# treated as full deflection. Lower = heavier.
+reflect_range = 40
+
+invert = false
+
+# Feel tweaks (percent), off by default.
+damper_floor = 0
+spring_deadband = 0
+
+# Only apply force while the game has powered the steering motor (onPower/offPower).
+# Set false if you never get any force and want to rule that out.
+require_motor_power = true
+
+# Rumble mode only: ignore forces below this (percent).
+rumble_threshold = 5
+
+# Print every change the game makes to the steering board. Use this first.
+debug = false

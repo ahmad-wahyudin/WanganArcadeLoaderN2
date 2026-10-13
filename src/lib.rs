@@ -14,6 +14,7 @@ pub mod jamma;
 pub mod opengl;
 pub mod poll;
 pub mod res;
+pub mod ffb;
 
 #[derive(serde::Deserialize)]
 pub struct FileRedirect {
@@ -762,6 +763,7 @@ unsafe fn init() {
 	)));
 
 	adm::init();
+	ffb::init();
 	al::load_al_funcs();
 
 	if CONFIG.input_emu {

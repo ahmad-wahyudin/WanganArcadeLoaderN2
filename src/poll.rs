@@ -358,6 +358,19 @@ impl PollState {
 		}
 	}
 
+	pub fn rumble(&mut self, low: u16, high: u16, ms: u32) -> usize {
+		let mut ok = 0;
+		for c in self.controllers.values_mut() {
+			if c.set_rumble(low, high, ms).is_ok() {
+				ok += 1;
+			}
+		}
+		ok
+	}
+	pub fn controller_names(&self) -> Vec<String> {
+		self.controllers.values().map(|c| c.name()).collect()
+	}
+
 	fn keycode_is_down(&self, keycode: &SdlKeycode) -> bool {
 		self.keyboard_state.contains(keycode)
 	}

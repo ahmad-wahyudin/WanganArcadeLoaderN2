@@ -49,6 +49,7 @@ unsafe fn handle_inputs_inner(data: *mut u32) {
 
 	let keyconfig = KEYCONFIG.as_ref().unwrap();
 	sdl.update();
+	ffb::tick(sdl);
 
 	if sdl.is_tapped(&keyconfig.card_insert) {
 		if let Ok(card) = std::fs::read("card.bin") {
