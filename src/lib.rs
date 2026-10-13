@@ -661,10 +661,12 @@ const fn default_gameversion() -> GameVersion {
 
 #[ctor::ctor]
 unsafe fn init() {
-	if let Ok(toml) = std::fs::read_to_string("config.toml") {
-		if let Ok(toml) = toml::from_str(&toml) {
-			CONFIG = toml;
-		}
+	match std::fs::read_to_string("config.toml") {
+		Ok(text) => match toml::from_str::<Config>(&text) {
+			Ok(cfg) => CONFIG = cfg,
+			Err(e) => eprintln!("config.toml failed to parse, falling back to defaults:\n{e}"),
+		},
+		Err(e) => eprintln!("Could not read config.toml ({e}), falling back to defaults"),
 	}
 
 	// Really what I should do is implement a custom serde::Deserialize for KeyBindings
@@ -699,8 +701,10 @@ unsafe fn init() {
 		wheel_right: Vec<String>,
 	}
 
-	let toml = std::fs::read_to_string("keyconfig.toml").unwrap();
-	let keyconfig: KeyConfigTemp = toml::from_str(&toml).unwrap();
+	let toml = std::fs::read_to_string("keyconfig.toml")
+		.expect("Could not read keyconfig.toml");
+	let keyconfig: KeyConfigTemp = toml::from_str(&toml)
+		.unwrap_or_else(|e| panic!("keyconfig.toml failed to parse:\n{e}"));
 	let keyconfig = KeyConfig {
 		test: parse_keybinding(keyconfig.test),
 		service: parse_keybinding(keyconfig.service),
