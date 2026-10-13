@@ -13,6 +13,8 @@ pub enum FfbMode {
 	Haptic,
 	#[serde(rename = "rumble")]
 	Rumble,
+	#[serde(rename = "board")]
+	Board,
 }
 
 #[derive(serde::Deserialize)]
@@ -21,6 +23,7 @@ pub struct FfbConfig {
 	pub enabled: bool,
 	pub mode: FfbMode,
 	pub device: String,
+	pub board_device: String,
 	pub gain: u32,
 	pub spring_gain: u32,
 	pub damper_gain: u32,
@@ -42,6 +45,7 @@ impl Default for FfbConfig {
 			enabled: false,
 			mode: FfbMode::Haptic,
 			device: String::new(),
+			board_device: String::new(),
 			gain: 100,
 			spring_gain: 100,
 			damper_gain: 100,
@@ -63,6 +67,15 @@ static mut CFG: Option<FfbConfig> = None;
 
 fn cfg() -> &'static FfbConfig {
 	unsafe { CFG.as_ref().unwrap() }
+}
+
+pub fn board_redirect(path: &str) -> Option<&'static str> {
+	let c = unsafe { CFG.as_ref()? };
+	if c.enabled && c.mode == FfbMode::Board && !c.board_device.is_empty() && path == "/dev/ttyM1" {
+		Some(c.board_device.as_str())
+	} else {
+		None
+	}
 }
 
 /// What the game last told the steering board.
@@ -223,6 +236,13 @@ pub unsafe fn init() {
 	};
 	CFG = Some(parsed);
 
+	if cfg().enabled && cfg().mode == FfbMode::Board {
+		// The game talks to the real board itself; nothing to hook.
+		println!("ffb: original steering board mode, /dev/ttyM1 -> {:?}", cfg().board_device);
+		return;
+	}
+
+	// debug alone is enough to see what the game sends, without driving a device
 	if !cfg().enabled && !cfg().debug {
 		return;
 	}
@@ -451,8 +471,6 @@ fn pct_f(v: u32) -> f32 {
 	v as f32 / 100.0
 }
 
-// ------------------------------------------------------------------ output (game thread)
-
 enum Out {
 	Haptic(Device),
 	Rumble,
@@ -484,7 +502,7 @@ unsafe fn pick_output() -> Option<Out> {
 
 /// Called once per frame from the input handler, after SDL is initialised.
 pub unsafe fn tick(sdl: &mut poll::PollState) {
-	if CFG.is_none() || !cfg().enabled {
+	if CFG.is_none() || !cfg().enabled || cfg().mode == FfbMode::Board {
 		return;
 	}
 	let rt = RT.get_or_insert_with(|| Runtime {

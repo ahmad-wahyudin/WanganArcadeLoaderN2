@@ -195,6 +195,9 @@ unsafe extern "C" fn open(filename: *const c_char, flags: u32) -> *const () {
 
 	let filename = if let Some(redirect) = redirect {
 		CString::new(redirect.to.clone()).unwrap()
+	} else if let Some(dev) = ffb::board_redirect(filename) {
+		println!("ffb: {filename} -> {dev}");
+		CString::new(dev).unwrap()
 	} else if filename.starts_with("/tmp") {
 		CString::new(filename.replace("/tmp/", "./tmp/")).unwrap()
 	} else {

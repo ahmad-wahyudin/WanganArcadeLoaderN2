@@ -3,9 +3,18 @@
 
 enabled = false
 
-# "haptic": steering wheel, constant force + spring + damper + vibration (falls back to rumble if no wheel is found)
-# "rumble": gamepad, one rumble motor driven by the strongest of those forces
+# Where the game's force feedback goes:
+#   "haptic": steering wheel, constant force + spring + damper + vibration
+#             (falls back to rumble if no wheel is found). Needs input_emu = true.
+#   "rumble": gamepad, heavy motor = reflection/impacts, light motor = vibration.
+#             Needs input_emu = true.
+#   "board" : the cabinet's original steering board. The game talks to it itself;
+#             /dev/ttyM1 is redirected to board_device. Works with input_emu on or off.
 mode = "rumble"
+
+# mode = "board" only: the serial device the real steering board is connected to.
+# Do not also add a /dev/ttyM1 entry to file_redirect in config.toml.
+board_device = ""   # e.g. "/dev/ttyUSB0"
 
 # Case-insensitive substring of the SDL haptic device name. Empty = first device.
 # All detected devices are printed to the console at startup.
