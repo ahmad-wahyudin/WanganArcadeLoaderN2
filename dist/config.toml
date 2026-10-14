@@ -4,6 +4,7 @@ fullscreen = false
 fullscreen_mode = "exclusive"
 preserve_aspect_ratio = false
 input_emu = true
+jvs_prime_device = "/dev/ttyUSB0"
 card_emu = true
 redir_card = false
 card_device = "/dev/ttyM0"
@@ -22,3 +23,8 @@ invert_brake = false
 
 width = 640
 height = 480
+
+# redirect real jvs i/o board
+[[file_redirect]]
+from = "/dev/ttyM3"
+to = "/dev/ttyUSB0"

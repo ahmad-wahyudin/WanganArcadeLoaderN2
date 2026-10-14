@@ -6,9 +6,10 @@ Talks JVS over a USB-RS485 adapter and shows the board ID, its capabilities
 and a live view of switches, coins and analog axes, plus link statistics
 (poll rate, round-trip time, timeouts, checksum errors, re-inits).
 
-  python3 jvs_debug.py /dev/ttyUSB0 --info     # ID + capabilities, then exit
-  python3 jvs_debug.py /dev/ttyUSB0            # live monitor (full screen)
-  python3 jvs_debug.py /dev/ttyUSB0 --log      # print only changes, timestamped
+  python3 jvs_debug.py /dev/ttyUSB0 --info                      # ID + capabilities, then exit
+  python3 jvs_debug.py /dev/ttyUSB0                             # live monitor (full screen)
+  python3 jvs_debug.py /dev/ttyUSB0 --log                       # print only changes, timestamped
+  python3 jvs_debug.py /dev/ttyUSB0 --info --reset-delay 0.1    # reset with delay
 
 Stop jvscore and the game first: only one program can be the bus master.
 """

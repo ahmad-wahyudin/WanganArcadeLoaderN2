@@ -14,6 +14,7 @@ pub mod jamma;
 pub mod opengl;
 pub mod poll;
 pub mod res;
+pub mod jvsprime;
 pub mod ffb;
 
 #[derive(serde::Deserialize)]
@@ -39,6 +40,7 @@ pub struct Config {
 	fullscreen_mode: FullscreenMode,
 	preserve_aspect_ratio: bool,
 	input_emu: bool,
+	jvs_prime_device: Option<String>,
 	card_emu: bool,
 	redir_card: bool,
 	card_device: String,
@@ -66,6 +68,7 @@ const fn default_config() -> Config {
 		fullscreen_mode: FullscreenMode::Exclusive,
 		preserve_aspect_ratio: false,
 		input_emu: true,
+		jvs_prime_device: None,
 		card_emu: true,
 		redir_card: false,
 		card_device: String::new(),
@@ -663,6 +666,16 @@ const fn default_gameversion() -> GameVersion {
 	}
 }
 
+type FnN2JvioInit = unsafe extern "C" fn(*const c_char, *mut c_char, c_int) -> c_int;
+static mut ORIGINAL_N2JVIO_INIT: Option<FnN2JvioInit> = None;
+
+unsafe extern "C" fn n2jvio_init_hook(a: *const c_char, b: *mut c_char, c: c_int) -> c_int {
+	if let Some(dev) = CONFIG.jvs_prime_device.clone().filter(|s| !s.is_empty()) {
+		jvsprime::prime(&dev);
+	}
+	ORIGINAL_N2JVIO_INIT.unwrap()(a, b, c)
+}
+
 #[ctor::ctor]
 unsafe fn init() {
 	match std::fs::read_to_string("config.toml") {
@@ -789,6 +802,15 @@ unsafe fn init() {
 	}
 	if CONFIG.width != 640 || CONFIG.height != 480 {
 		res::init();
+	}
+	if let Some(dev) = CONFIG.jvs_prime_device.clone().filter(|s| !s.is_empty()) {
+		let tramp = hook::hook_symbol("n2JvioInit", n2jvio_init_hook as *const ());
+		if tramp.is_null() {
+			eprintln!("jvs prime: cannot hook n2JvioInit, priming now instead");
+			jvsprime::prime(&dev);
+		} else {
+		ORIGINAL_N2JVIO_INIT = Some(transmute(tramp));
+		}
 	}
 
 	let rom_info = hook::get_symbol("gRomInfo") as *const RomInfo;
