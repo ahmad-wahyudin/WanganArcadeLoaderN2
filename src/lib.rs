@@ -16,6 +16,7 @@ pub mod poll;
 pub mod res;
 pub mod jvsprime;
 pub mod ffb;
+pub mod steerfix;
 
 #[derive(serde::Deserialize)]
 pub struct FileRedirect {
@@ -58,6 +59,10 @@ pub struct Config {
 	invert_steering: bool,
 	invert_gas: bool,
 	invert_brake: bool,
+	#[serde(default)]
+	skip_steering_error: bool,
+	#[serde(default)]
+	skip_calibration_check: bool,
 
 	file_redirect: Option<Vec<FileRedirect>>,
 }
@@ -85,6 +90,8 @@ const fn default_config() -> Config {
 		invert_steering: false,
 		invert_gas: false,
 		invert_brake: false,
+		skip_steering_error: false,
+		skip_calibration_check: false,
 		file_redirect: None,
 	}
 }
@@ -780,6 +787,10 @@ unsafe fn init() {
 
 	adm::init();
 	ffb::init();
+	if !CONFIG.input_emu && (CONFIG.skip_steering_error || CONFIG.skip_calibration_check) {
+		steerfix::init(CONFIG.skip_steering_error, CONFIG.skip_calibration_check);
+	}
+	
 	al::load_al_funcs();
 
 	if CONFIG.input_emu {

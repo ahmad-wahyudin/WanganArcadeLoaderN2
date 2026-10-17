@@ -21,6 +21,10 @@ invert_steering = false
 invert_gas = false
 invert_brake = false
 
+# only apply when input_emu is false
+skip_steering_error = true         #only while steering power is off
+skip_calibration_check = false     #steering power on or off
+
 width = 640
 height = 480
 
