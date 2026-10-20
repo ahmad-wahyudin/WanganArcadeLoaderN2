@@ -4,7 +4,7 @@ fullscreen = false
 fullscreen_mode = "exclusive"
 preserve_aspect_ratio = false
 input_emu = true
-jvs_prime_device = "/dev/ttyUSB0"
+jvs_prime_device = "/dev/ttyUSB0" # jvs i/o port
 card_emu = true
 redir_card = false
 card_device = "/dev/ttyM0"
@@ -21,9 +21,12 @@ invert_steering = false
 invert_gas = false
 invert_brake = false
 
-# only apply when input_emu is false
-skip_steering_error = true         #only while steering power is off
-skip_calibration_check = false     #steering power on or off
+skip_steering_error = true         # only while input_emu is false and steering power is off
+skip_calibration_check = false     # works when steering power is on or off in any input_emu mode
+
+# needed for using str board without jvs i/o board using nano
+init_kickback = false
+pin8_device = "/dev/ttyUSB1"        # nano board for pin8 emulation
 
 width = 640
 height = 480
@@ -32,3 +35,8 @@ height = 480
 [[file_redirect]]
 from = "/dev/ttyM3"
 to = "/dev/ttyUSB0"
+
+# redirect real str board
+[[file_redirect]]
+from = "/dev/ttyM1"
+to = "/dev/ttyS0" 

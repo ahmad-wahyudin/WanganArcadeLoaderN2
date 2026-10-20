@@ -17,6 +17,7 @@ pub mod res;
 pub mod jvsprime;
 pub mod ffb;
 pub mod steerfix;
+pub mod pin8;
 
 #[derive(serde::Deserialize)]
 pub struct FileRedirect {
@@ -59,10 +60,16 @@ pub struct Config {
 	invert_steering: bool,
 	invert_gas: bool,
 	invert_brake: bool,
+
 	#[serde(default)]
 	skip_steering_error: bool,
 	#[serde(default)]
 	skip_calibration_check: bool,
+
+	#[serde(default)]
+	pin8_device: Option<String>,
+	#[serde(default)]
+	init_kickback: bool,
 
 	file_redirect: Option<Vec<FileRedirect>>,
 }
@@ -92,6 +99,8 @@ const fn default_config() -> Config {
 		invert_brake: false,
 		skip_steering_error: false,
 		skip_calibration_check: false,
+		pin8_device: None,
+		init_kickback: false,
 		file_redirect: None,
 	}
 }
@@ -787,9 +796,11 @@ unsafe fn init() {
 
 	adm::init();
 	ffb::init();
-	if !CONFIG.input_emu && (CONFIG.skip_steering_error || CONFIG.skip_calibration_check) {
-		steerfix::init(CONFIG.skip_steering_error, CONFIG.skip_calibration_check);
+	let skip_steering = CONFIG.skip_steering_error && !CONFIG.input_emu;
+	if skip_steering || CONFIG.skip_calibration_check {
+    	steerfix::init(skip_steering, CONFIG.skip_calibration_check);
 	}
+	pin8::init();
 	
 	al::load_al_funcs();
 
