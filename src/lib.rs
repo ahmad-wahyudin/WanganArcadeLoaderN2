@@ -212,10 +212,15 @@ unsafe extern "C" fn open(filename: *const c_char, flags: u32) -> *const () {
 		})
 		.flatten();
 
+	let card_dev = card_redir::redirect(filename);
+
 	let filename = if let Some(redirect) = redirect {
 		CString::new(redirect.to.clone()).unwrap()
 	} else if let Some(dev) = ffb::board_redirect(filename) {
 		println!("ffb: {filename} -> {dev}");
+		CString::new(dev).unwrap()
+	} else if let Some(dev) = card_dev {
+		println!("card: {filename} -> {dev}");
 		CString::new(dev).unwrap()
 	} else if filename.starts_with("/tmp") {
 		CString::new(filename.replace("/tmp/", "./tmp/")).unwrap()
@@ -809,18 +814,14 @@ unsafe fn init() {
 	}else {
 		jamma::hook_seq_main();
 	}
+	if CONFIG.redir_card && CONFIG.card_emu {
+		panic!("Invalid configuration: set either redir_card or card_emu, not both.");
+	}
 	if CONFIG.card_emu {
 		card::init();
 	}
 	if CONFIG.redir_card && CONFIG.card_device.is_empty() {
-		println!("Path for card redirect is not specified!, please check config.toml");
-		card_redir::init();
-	}
-	if CONFIG.redir_card && !CONFIG.card_device.is_empty() {
-		card_redir::init();
-	}
-	if CONFIG.redir_card && CONFIG.card_emu {
-		panic!("Invalid configuation, both options conflict, either set redir_card or card_emu to true.")
+		println!("card: redir_card is on but card_device is empty, nothing will be redirected");
 	}
 	if CONFIG.width != 640 || CONFIG.height != 480 {
 		res::init();
